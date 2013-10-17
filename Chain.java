@@ -2,80 +2,84 @@
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Random;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
+ * Class holding integral mechanism
  *
  * @author Zofia Sobocinska
  */
 public class Chain {
 
 	/**
-	 * 
-	 * @param a
-	 * @param b
-	 * @param fun 
+	 * Classe's constructor
+	 *
+	 * @param start Integral range's start
+	 * @param end Integral range's end
+	 * @param fun Function to calculate
 	 */
-	public Chain(double a, double b, Fun fun) {
+	public Chain(double start, double end, Fun fun) {
 
-		Chunk.configure(a, b, fun);
+		Chunk.configure(start, end, fun);
 
 	}
 
 	/**
-	 * 
-	 * @return 
+	 * Method to start integral mechanism.
+	 *
+	 * @return
 	 */
-	public double integral() {
-
+	public double integral() throws InterruptedException {
 		return Chunk.integral();
 	}
 
 	/**
-	 * 
+	 * Thread to calculate partial chunk of the integral.
 	 */
 	private static class Chunk extends Thread {
 
-		private static ArrayList<Chunk> chunks;
+		// STATIC
 		private static final long MAX_TIME = 10 * 1000;
-		private static double max;
-		private static Fun fun;
 		private static final int THREADS_COUNT = 8;
-		private static final int THREAD_ITERATIONS = 1000000;
-		private static double area;
-		private static final Hits HITS = new Hits(0);
+		private static ArrayList<Chunk> chunks;
+		private static Fun fun;
+//		private static final int THREAD_ITERATIONS = 1000; // DEVELOPMENT
+		private static final int THREAD_ITERATIONS = 1000000; // PRODUCTION
+		// NON-STATIC
 		private int iterations;
 		private double a;
 		private double b;
-		
+		private double max;
+		private double area;
+		private double partial;
+
 		/**
-		 * 
+		 * Chunk's constructor.
+		 *
 		 * @param a
-		 * @param b 
+		 * @param b
 		 */
 		private Chunk(double a, double b) {
 			this.a = a;
 			this.b = b;
-			this.iterations = THREAD_ITERATIONS;
+			this.iterations = 0;
+
+			max = fun.max(a, b);
+			area = area(a, b);
 		}
 
 		/**
-		 * 
-		 * @param a
-		 * @param b
-		 * @param _fun 
+		 * Method to configure chunk of the integral.
+		 *
+		 * @param start
+		 * @param end
+		 * @param _fun
 		 */
-		public static void configure(double a, double b, Fun _fun) {
+		static void configure(double start, double end, Fun _fun) {
 			fun = _fun;
-
-			max = fun.max(a, b);
-
-			area = area(a, b);
 
 			chunks = new ArrayList<>();
 
-			double interval = (b - a) / THREADS_COUNT;
+			double interval = (end - start) / THREADS_COUNT;
 
 			for (int i = 0; i < THREADS_COUNT; i++) {
 				chunks.add(new Chunk(i * interval, (i + 1) * interval));
@@ -83,46 +87,46 @@ public class Chain {
 		}
 
 		/**
-		 * 
-		 * @return 
+		 * Method to clear static chunk configuration and calculated values.
 		 */
-		public static double integral() {
+		private static void clear() {
+			fun = null;
+			chunks = null;
+		}
+
+		/**
+		 * Method to calculate integral of the function provided.
+		 *
+		 * @return Total integral value (chunk's sum).
+		 */
+		static double integral() throws InterruptedException {
 
 			Iterator<Chunk> i = chunks.iterator();
+
 			while (i.hasNext()) {
 				i.next().start();
 			}
-			try {
-				for (Chunk chunk : chunks) {
-					chunk.join();
-				}
-				return Chunk.getResult();
-			} catch (InterruptedException ex) {
-				Logger.getLogger(Chain.class.getName()).log(Level.SEVERE, null, ex);
+			double result = 0;
+			for (Chunk chunk : chunks) {
+				chunk.join();
+				result += chunk.partial;
 			}
-			return 0;
+			clear();
+			return result;
 		}
 
 		/**
-		 * 
-		 * @return 
-		 */
-		public static double getResult() {
-			return (new Double(HITS.get()) / new Double(THREADS_COUNT * THREAD_ITERATIONS)) * area;
-		}
-
-		/**
-		 * 
+		 *
 		 * @param a
 		 * @param b
-		 * @return 
+		 * @return
 		 */
-		private static double area(double a, double b) {
+		private double area(double a, double b) {
 			return max * (b - a);
 		}
 
 		/**
-		 * 
+		 * Thread's run method overriden
 		 */
 		@Override
 		public void run() {
@@ -144,73 +148,36 @@ public class Chain {
 				if (y < f) {
 					hit++;
 				}
-				iterations--;
+				iterations++;
 
-			} while (iterations > 0
+			} while (iterations < THREAD_ITERATIONS
 							&& (System.currentTimeMillis() - startTime) < MAX_TIME);
 
-			synchronized (HITS) {
-				HITS.add(hit);
-			}
+			partial = (new Double(hit) / iterations * area);
 
-		}
-
-		/**
-		 * 
-		 */
-		public static class Hits {
-
-			private Integer hits;
-
-			public Hits(int init) {
-				hits = init;
-			}
-
-			/**
-			 * 
-			 * @param val 
-			 */
-			public void add(int val) {
-				synchronized (hits) {
-					hits += val;
-				}
-			}
-
-			/**
-			 * 
-			 * @param val 
-			 */
-			public void set(int val) {
-				hits = val;
-			}
-
-			/**
-			 * 
-			 * @return 
-			 */
-			public double get() {
-				return hits;
-			}
 		}
 	}
 
 	/**
-	 * 
+	 * Interface that integrated function's class should implement. It's used by
+	 * Chain class to calculate integral.
 	 */
 	public static interface Fun {
 
 		/**
-		 * 
+		 * Method to calculate function.
+		 *
 		 * @param x
-		 * @return 
+		 * @return
 		 */
 		public double calc(double x);
 
 		/**
-		 * 
-		 * @param start
-		 * @param end
-		 * @return 
+		 * Maximum of the function at given range.
+		 *
+		 * @param start Range start
+		 * @param end Range end
+		 * @return Maximum
 		 */
 		public double max(double start, double end);
 	}
@@ -218,20 +185,23 @@ public class Chain {
 
 //----------------------------------------------------------------------------
 /**
- * 
+ * Custom randomizer extending Random class with randomizer at given range.
+ *
  * @author politechnika
  */
 class Rand extends Random {
 
 	/**
-	 * 
+	 *
 	 * @param max
 	 * @param min
-	 * @return 
+	 * @return
 	 */
 	private static final long serialVersionUID = 0;
-	
-	public double nextDouble(double max, double min) {
-		return min + (max - min) * nextDouble();
+
+	public double nextDouble(double min, double max) {
+		
+		double rand = min + (max - min) * nextDouble();
+		return (rand != max)?rand:nextDouble(min, max);
 	}
 }
